@@ -1,0 +1,34 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ai-confidence-scores"
+version = "0.1.0"
+description = "Production-grade evaluation, calibration, and benchmarking of 9 LLM confidence score frameworks using google-genai"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "google-genai>=0.1.1",
+    "pymupdf>=1.23.0",
+    "pydantic>=2.0.0",
+    "numpy>=1.24.0",
+    "pandas>=2.0.0",
+    "scikit-learn>=1.3.0",
+    "scipy>=1.10.0",
+    "matplotlib>=3.7.0",
+    "seaborn>=0.12.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-mock>=3.11.0",
+    "jupyter>=1.0.0",
+    "nbformat>=5.9.0",
+    "ipykernel>=6.25.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
