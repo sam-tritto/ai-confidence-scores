@@ -18,7 +18,7 @@ def run():
 
     print(f"Saving executed notebook back to {nb_path}...")
     nbformat.write(nb, str(nb_path))
-    print("✅ Notebook execution completed successfully!")
+    print("Notebook execution completed successfully!")
 
 
 if __name__ == "__main__":

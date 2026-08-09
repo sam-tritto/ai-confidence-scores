@@ -1,10 +1,10 @@
-# 🎯 Enterprise AI Confidence Calibration Suite (`ai-confidence-scores`)
+# Enterprise AI Confidence Calibration Suite (`ai-confidence-scores`)
 
 > Production-Grade Evaluation, Calibration, and Benchmarking of 9 Distinct LLM Confidence Score Frameworks for Multimodal PDF Resume Parsing & Classification using Google's `google-genai` SDK.
 
 ---
 
-## 📌 Executive Summary & Case Study
+## Executive Summary & Case Study
 
 When deploying Large Language Models (LLMs) like **Gemini 2.5 Flash** for automated resume screening and candidate domain classification, raw model outputs frequently suffer from **probability saturation** and **overconfidence**. Uncalibrated confidence scores can lead to silent misclassifications, invalid automated hiring routes, or excessive manual auditing work.
 
@@ -12,7 +12,7 @@ This repository provides an enterprise-grade framework that evaluates, calibrate
 
 ---
 
-## 🏗️ System Architecture
+## System Architecture
 
 ```
                                 ┌───────────────────────────────┐
@@ -45,7 +45,7 @@ This repository provides an enterprise-grade framework that evaluates, calibrate
 
 ---
 
-## 🔬 Mathematical Breakdown of 9 Confidence Frameworks
+## Mathematical Breakdown of 9 Confidence Frameworks
 
 ### 1. Native Token LogProb Engine (`NativeLogProbEngine`)
 Configures `response_logprobs=True` and `logprobs=5` in `GenerateContentConfig`. Computes joint sequence confidence as the geometric mean token probability:
@@ -84,7 +84,7 @@ Submits candidate extractions to a secondary judge instance (`gemini-2.5-flash`)
 
 ---
 
-## 📊 Empirical Benchmark Results
+## Empirical Benchmark Results
 
 | Framework Engine | Accuracy | ECE (Lower is Better) | MCE | Brier Score | Mean Conf | Mean Latency (ms) | Automation Ratio |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
@@ -100,7 +100,7 @@ Submits candidate extractions to a secondary judge instance (`gemini-2.5-flash`)
 
 ---
 
-## 📈 Visual Benchmark Artifacts
+## Visual Benchmark Artifacts
 
 The visualizer suite generates comparative plots saved in `./notebooks/plots/`:
 
@@ -110,7 +110,7 @@ The visualizer suite generates comparative plots saved in `./notebooks/plots/`:
 
 ---
 
-## 🛠️ Installation & Setup
+## Installation & Setup
 
 This repository uses [`uv`](https://github.com/astral-sh/uv) for fast, reproducible dependency management.
 
@@ -131,7 +131,7 @@ cp .env.example .env
 
 ---
 
-## 💻 Quickstart Code Example
+## Quickstart Code Example
 
 ```python
 from src.ingestion import ResumeIngestor
@@ -154,7 +154,7 @@ print(f"Audit Routing Decision: {result.audit_decision.value}")
 
 ---
 
-## 🧪 Running Unit Tests
+## Running Unit Tests
 
 Execute the full `pytest` suite with unit tests for schemas, ingestion, calibration engines, and metrics:
 
@@ -164,7 +164,7 @@ uv run pytest -v
 
 ---
 
-## 📓 Jupyter Notebook Tutorial
+## Jupyter Notebook Tutorial
 
 Launch or run the complete tutorial notebook demonstrating all 9 engines and generating visual charts:
 
@@ -174,5 +174,5 @@ uv run jupyter notebook notebooks/calibration_benchmark_tutorial.ipynb
 
 ---
 
-## 📜 License
+## License
 MIT License. Developed for enterprise AI engineering benchmarking.
