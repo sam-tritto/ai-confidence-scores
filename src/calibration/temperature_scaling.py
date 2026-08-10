@@ -1,105 +1,140 @@
 """
 3. Post-Hoc Temperature Scaling Engine.
-Fits a temperature parameter T > 1 on raw logprobs using Negative Log-Likelihood (NLL) optimization.
-P_calibrated(i) = exp(z_i / T) / sum(exp(z_j / T))
+Fits temperature parameter T > 1 on logit/logprob values via NLL optimization.
+Domain-agnostic with configurable Pydantic response schemas.
 """
 
 import math
 import time
-from typing import List, Optional, Tuple
-import numpy as np
-from scipy.optimize import minimize
+from typing import Any, Optional, Type
+from google import genai
 from google.genai import types
+import numpy as np
+from pydantic import BaseModel
+from scipy.optimize import minimize
 
 from src.calibration.base import BaseConfidenceEngine
-from src.schema import CalibrationResult, ResumeExtraction
+from src.exceptions import ExtractionValidationError, LogProbsUnavailableError
+from src.schema import CalibrationResult, GenericExtraction
 
 
 class TemperatureScalingEngine(BaseConfidenceEngine):
-    """Engine 3: Post-Hoc Temperature Scaling Engine.
-    
-    Rescales logit/logprob distribution using temperature parameter T fitted via NLL optimization.
-    """
+    """Engine 3: Post-Hoc Temperature Scaling Engine."""
 
-    def __init__(self, client=None, model_name: str = "gemini-2.5-flash", audit_threshold: float = 0.75, temperature: float = 1.35):
-        super().__init__(client=client, model_name=model_name, audit_threshold=audit_threshold)
+    def __init__(
+        self,
+        client: Optional[genai.Client] = None,
+        model_name: Optional[str] = None,
+        audit_threshold: Optional[float] = None,
+        temperature: float = 1.2,
+        use_vertex: Optional[bool] = None,
+        project: Optional[str] = None,
+        location: Optional[str] = None,
+        api_key: Optional[str] = None,
+    ):
+        super().__init__(
+            client=client,
+            model_name=model_name,
+            audit_threshold=audit_threshold,
+            use_vertex=use_vertex,
+            project=project,
+            location=location,
+            api_key=api_key,
+        )
         self.temperature = temperature
         self.is_fitted = False
 
     def fit(self, val_logits: np.ndarray, val_labels: np.ndarray) -> float:
-        """Fit optimal temperature parameter T on validation logits and target ground-truth binary labels."""
+        """Fit optimal temperature parameter T > 0 on validation split using NLL loss."""
         def nll_loss(t: float) -> float:
-            t = max(t[0], 0.01)
-            scaled_logits = val_logits / t
-            # Log Softmax / Sigmoid cross-entropy
-            probs = 1.0 / (1.0 + np.exp(-scaled_logits))
-            probs = np.clip(probs, 1e-7, 1 - 1e-7)
+            scaled = val_logits / max(t[0], 0.01)
+            probs = 1.0 / (1.0 + np.exp(-scaled))
+            eps = 1e-12
+            probs = np.clip(probs, eps, 1.0 - eps)
             loss = -np.mean(val_labels * np.log(probs) + (1 - val_labels) * np.log(1 - probs))
             return float(loss)
 
-        res = minimize(nll_loss, x0=[1.35], bounds=[(0.1, 5.0)], method="L-BFGS-B")
+        res = minimize(nll_loss, x0=[self.temperature], bounds=[(0.01, 10.0)])
         self.temperature = float(res.x[0])
         self.is_fitted = True
+        self.logger.info("Fitted optimal Temperature parameter T = %.4f", self.temperature)
         return self.temperature
 
     def evaluate(
         self,
-        resume_text: str,
+        input_text: str,
+        schema: Type[BaseModel] = GenericExtraction,
+        prompt: Optional[str] = None,
         pdf_bytes: Optional[bytes] = None,
-        ground_truth: Optional[ResumeExtraction] = None,
+        ground_truth: Optional[Any] = None,
     ) -> CalibrationResult:
+        self._ensure_client()
         start_time = time.perf_counter()
 
-        prompt = (
-            "Analyze the following resume and extract candidate metadata in JSON format.\n"
-            f"Resume Text:\n{resume_text}"
+        eval_prompt = prompt or (
+            f"Analyze the following text and extract structured information into JSON format.\n"
+            f"Input Text:\n{input_text}"
         )
 
-        extraction = None
-        raw_logprob = -0.25
+        config = types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema=schema,
+            response_logprobs=True,
+            logprobs=5,
+            temperature=0.0,
+        )
 
-        if self.client is not None:
-            try:
-                config = types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=ResumeExtraction,
-                    response_logprobs=True,
-                    logprobs=5,
-                    temperature=0.0,
+        contents = [eval_prompt]
+        if pdf_bytes:
+            contents.insert(0, types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"))
+
+        self.logger.info("Executing %s with schema %s on model %s", self.__class__.__name__, schema.__name__, self.model_name)
+        try:
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=contents,
+                config=config,
+            )
+        except Exception as e:
+            err_str = str(e)
+            if "Logprobs is not enabled" in err_str or "INVALID_ARGUMENT" in err_str or "logprobs" in err_str.lower():
+                raise LogProbsUnavailableError(
+                    self.__class__.__name__,
+                    f"Logprobs are not enabled for model '{self.model_name}'. Please switch GEMINI_MODEL to a supported model such as 'gemini-2.0-flash' or 'gemini-1.5-flash'. Original error: {err_str}"
                 )
-                contents = [prompt]
-                if pdf_bytes:
-                    contents.insert(0, types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"))
+            raise e
 
-                response = self.client.models.generate_content(
-                    model=self.model_name,
-                    contents=contents,
-                    config=config,
-                )
+        if not response.text:
+            raise ExtractionValidationError(self.__class__.__name__, "", "Empty API response text")
 
-                if response.text:
-                    extraction = ResumeExtraction.model_validate_json(response.text)
+        try:
+            extraction = schema.model_validate_json(response.text)
+        except Exception as e:
+            raise ExtractionValidationError(self.__class__.__name__, response.text, str(e))
 
-                if response.candidates and response.candidates[0].logprobs_result:
-                    logprob_result = response.candidates[0].logprobs_result
-                    chosen_tokens = getattr(logprob_result, "chosen_candidates", None) or getattr(logprob_result, "top_candidates", [])
-                    lps = [getattr(t, "log_probability", -0.2) for t in chosen_tokens if getattr(t, "log_probability", None) is not None]
-                    if lps:
-                        raw_logprob = sum(lps) / len(lps)
-            except Exception:
-                pass
+        logprob_values = []
+        try:
+            if response.candidates and len(response.candidates) > 0:
+                candidate = response.candidates[0]
+                if hasattr(candidate, "logprobs_result") and candidate.logprobs_result:
+                    chosen = getattr(candidate.logprobs_result, "chosen_candidates", [])
+                    for top_cand in chosen:
+                        if hasattr(top_cand, "log_probability") and top_cand.log_probability is not None:
+                            logprob_values.append(top_cand.log_probability)
+        except Exception as e:
+            self.logger.warning("Failed to extract logprob values from candidates: %s", str(e))
 
-        if extraction is None:
-            extraction = self._create_fallback_extraction(resume_text)
+        if not logprob_values:
+            raise LogProbsUnavailableError(self.__class__.__name__, f"Model '{self.model_name}' did not return valid token logprobabilities.")
 
-        raw_confidence = math.exp(raw_logprob)
-        raw_confidence = max(0.0, min(1.0, raw_confidence))
+        mean_logprob = float(sum(logprob_values) / len(logprob_values))
+        raw_confidence = float(math.exp(mean_logprob))
 
-        # Temperature Scaling on Logit z = log(raw_confidence / (1 - raw_confidence))
-        logit = math.log(max(raw_confidence, 1e-5) / max(1.0 - raw_confidence, 1e-5))
-        calibrated_logit = logit / self.temperature
-        calibrated_confidence = 1.0 / (1.0 + math.exp(-calibrated_logit))
-        calibrated_confidence = max(0.0, min(1.0, calibrated_confidence))
+        # Temperature scaling on logit representation
+        raw_logit = mean_logprob
+        scaled_logit = raw_logit / max(self.temperature, 0.01)
+        calibrated_confidence = float(math.exp(scaled_logit))
+        calibrated_confidence = float(max(0.0, min(1.0, calibrated_confidence)))
 
         latency_ms = (time.perf_counter() - start_time) * 1000.0
         decision = self.determine_audit_decision(calibrated_confidence)
@@ -112,9 +147,9 @@ class TemperatureScalingEngine(BaseConfidenceEngine):
             audit_decision=decision,
             latency_ms=latency_ms,
             metadata={
-                "fitted_temperature": self.temperature,
+                "temperature": self.temperature,
                 "is_fitted": self.is_fitted,
-                "raw_logit": logit,
-                "calibrated_logit": calibrated_logit,
+                "mean_logprob": mean_logprob,
+                "target_schema": schema.__name__,
             },
         )

@@ -1,85 +1,113 @@
 """
 1. Native Token LogProb Engine.
 Calculates joint sequence confidence: Confidence = exp( (1/N) * sum(logprob_i) ).
+Domain-agnostic with configurable Pydantic response schemas.
 """
 
 import math
 import time
-from typing import Optional
+from typing import Any, Optional, Type
+from google import genai
 from google.genai import types
+from pydantic import BaseModel
 
 from src.calibration.base import BaseConfidenceEngine
-from src.schema import CalibrationResult, ResumeExtraction
+from src.exceptions import ExtractionValidationError, LogProbsUnavailableError
+from src.schema import CalibrationResult, GenericExtraction
 
 
 class NativeLogProbEngine(BaseConfidenceEngine):
-    """Engine 1: Native Token LogProb Engine.
-    
-    Uses response_logprobs=True and logprobs=5 in GenerateContentConfig.
-    Computes geometric mean probability across output sequence tokens.
-    """
+    """Engine 1: Native Token LogProb Engine."""
+
+    def __init__(
+        self,
+        client: Optional[genai.Client] = None,
+        model_name: Optional[str] = None,
+        audit_threshold: Optional[float] = None,
+        use_vertex: Optional[bool] = None,
+        project: Optional[str] = None,
+        location: Optional[str] = None,
+        api_key: Optional[str] = None,
+    ):
+        super().__init__(
+            client=client,
+            model_name=model_name,
+            audit_threshold=audit_threshold,
+            use_vertex=use_vertex,
+            project=project,
+            location=location,
+            api_key=api_key,
+        )
 
     def evaluate(
         self,
-        resume_text: str,
+        input_text: str,
+        schema: Type[BaseModel] = GenericExtraction,
+        prompt: Optional[str] = None,
         pdf_bytes: Optional[bytes] = None,
-        ground_truth: Optional[ResumeExtraction] = None,
+        ground_truth: Optional[Any] = None,
     ) -> CalibrationResult:
+        self._ensure_client()
         start_time = time.perf_counter()
-        
-        prompt = (
-            "Analyze the following resume and extract candidate metadata in JSON format.\n"
-            f"Resume Text:\n{resume_text}"
+
+        eval_prompt = prompt or (
+            f"Analyze the following text and extract structured information into JSON format.\n"
+            f"Input Text:\n{input_text}"
         )
 
+        config = types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema=schema,
+            response_logprobs=True,
+            logprobs=5,
+            temperature=0.0,
+        )
+
+        contents = [eval_prompt]
+        if pdf_bytes:
+            contents.insert(0, types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"))
+
+        self.logger.info("Executing %s with schema %s on model %s", self.__class__.__name__, schema.__name__, self.model_name)
+        try:
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=contents,
+                config=config,
+            )
+        except Exception as e:
+            err_str = str(e)
+            if "Logprobs is not enabled" in err_str or "INVALID_ARGUMENT" in err_str or "logprobs" in err_str.lower():
+                raise LogProbsUnavailableError(
+                    self.__class__.__name__,
+                    f"Logprobs are not enabled for model '{self.model_name}'. Please switch GEMINI_MODEL to a supported model such as 'gemini-2.0-flash' or 'gemini-1.5-flash'. Original error: {err_str}"
+                )
+            raise e
+
+        if not response.text:
+            raise ExtractionValidationError(self.__class__.__name__, "", "Empty API response text")
+
+        try:
+            extraction = schema.model_validate_json(response.text)
+        except Exception as e:
+            raise ExtractionValidationError(self.__class__.__name__, response.text, str(e))
+
         logprob_values = []
-        extraction = None
-
-        if self.client is not None:
-            try:
-                config = types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=ResumeExtraction,
-                    response_logprobs=True,
-                    logprobs=5,
-                    temperature=0.0,
-                )
-                
-                contents = [prompt]
-                if pdf_bytes:
-                    contents.insert(0, types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"))
-
-                response = self.client.models.generate_content(
-                    model=self.model_name,
-                    contents=contents,
-                    config=config,
-                )
-                
-                if response.text:
-                    extraction = ResumeExtraction.model_validate_json(response.text)
-
-                # Extract token log probabilities
-                if response.candidates and response.candidates[0].logprobs_result:
-                    logprob_result = response.candidates[0].logprobs_result
-                    chosen_tokens = getattr(logprob_result, "chosen_candidates", None) or getattr(logprob_result, "top_candidates", [])
-                    for token_info in chosen_tokens:
-                        logprob = getattr(token_info, "log_probability", None)
-                        if logprob is not None:
-                            logprob_values.append(logprob)
-            except Exception as e:
-                # Fallback on API exception or logprobs missing
-                pass
-
-        if extraction is None:
-            extraction = self._create_fallback_extraction(resume_text)
+        try:
+            if response.candidates and len(response.candidates) > 0:
+                candidate = response.candidates[0]
+                if hasattr(candidate, "logprobs_result") and candidate.logprobs_result:
+                    chosen = getattr(candidate.logprobs_result, "chosen_candidates", [])
+                    for top_cand in chosen:
+                        if hasattr(top_cand, "log_probability") and top_cand.log_probability is not None:
+                            logprob_values.append(top_cand.log_probability)
+        except Exception as e:
+            self.logger.warning("Failed to extract logprob values from candidates: %s", str(e))
 
         if not logprob_values:
-            # Deterministic fallback logprob representation based on text length/clarity
-            logprob_values = [-0.15, -0.20, -0.10, -0.25, -0.05, -0.18, -0.12]
+            raise LogProbsUnavailableError(self.__class__.__name__, f"Model '{self.model_name}' did not return valid token logprobabilities.")
 
-        mean_logprob = sum(logprob_values) / len(logprob_values)
-        raw_confidence = math.exp(mean_logprob)
-        raw_confidence = max(0.0, min(1.0, raw_confidence))
+        mean_logprob = float(sum(logprob_values) / len(logprob_values))
+        raw_confidence = float(math.exp(mean_logprob))
         calibrated_confidence = raw_confidence
 
         latency_ms = (time.perf_counter() - start_time) * 1000.0
@@ -95,6 +123,6 @@ class NativeLogProbEngine(BaseConfidenceEngine):
             metadata={
                 "mean_logprob": mean_logprob,
                 "token_count": len(logprob_values),
-                "logprobs_sample": logprob_values[:5],
+                "target_schema": schema.__name__,
             },
         )

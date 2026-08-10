@@ -1,115 +1,131 @@
 """
 9. Two-Tier Evaluator Engine (LLM-as-a-Judge).
-Uses a secondary judge instance (gemini-2.5-flash) with an evaluation rubric to score
-precision, hallucination rate, and completeness on a 1-5 scale, normalized to a 0.0-1.0 score.
+Uses a secondary judge instance with an evaluation rubric to score output quality.
+Domain-agnostic with configurable Pydantic response schemas.
 """
 
 import os
 import time
-from typing import Optional
+from typing import Any, Optional, Type
+from google import genai
 from google.genai import types
+from pydantic import BaseModel
 
 from src.calibration.base import BaseConfidenceEngine
+from src.exceptions import ExtractionValidationError, JudgeEvaluationError
 from src.schema import (
     CalibrationResult,
+    GenericExtraction,
     JudgeEvaluation,
-    ResumeExtraction,
 )
 
 
 class LLMAsAJudgeEngine(BaseConfidenceEngine):
-    """Engine 9: Two-Tier Evaluator Engine (LLM-as-a-Judge).
-    
-    Submits primary extraction to a secondary judge LLM model with rubric for validation.
-    """
+    """Engine 9: Two-Tier Evaluator Engine (LLM-as-a-Judge)."""
 
-    def __init__(self, client=None, model_name: str = "gemini-2.5-flash", judge_model_name: str = "gemini-2.5-flash", audit_threshold: float = 0.75):
-        super().__init__(client=client, model_name=model_name, audit_threshold=audit_threshold)
-        self.judge_model_name = os.getenv("LLM_JUDGE_MODEL", judge_model_name)
+    def __init__(
+        self,
+        client: Optional[genai.Client] = None,
+        model_name: Optional[str] = None,
+        judge_model_name: Optional[str] = None,
+        audit_threshold: Optional[float] = None,
+        use_vertex: Optional[bool] = None,
+        project: Optional[str] = None,
+        location: Optional[str] = None,
+        api_key: Optional[str] = None,
+    ):
+        super().__init__(
+            client=client,
+            model_name=model_name,
+            audit_threshold=audit_threshold,
+            use_vertex=use_vertex,
+            project=project,
+            location=location,
+            api_key=api_key,
+        )
+        if self.use_vertex:
+            default_judge = os.getenv("VERTEX_LLM_JUDGE_MODEL", os.getenv("LLM_JUDGE_MODEL", self.model_name))
+        else:
+            default_judge = os.getenv("API_KEY_LLM_JUDGE_MODEL", os.getenv("LLM_JUDGE_MODEL", self.model_name))
+
+        self.judge_model_name = judge_model_name or default_judge
 
     def evaluate(
         self,
-        resume_text: str,
+        input_text: str,
+        schema: Type[BaseModel] = GenericExtraction,
+        prompt: Optional[str] = None,
         pdf_bytes: Optional[bytes] = None,
-        ground_truth: Optional[ResumeExtraction] = None,
+        ground_truth: Optional[Any] = None,
     ) -> CalibrationResult:
+        self._ensure_client()
         start_time = time.perf_counter()
 
-        # Step 1: Generate primary candidate extraction
-        extraction = None
-        if self.client is not None:
-            try:
-                config_primary = types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=ResumeExtraction,
-                    temperature=0.0,
-                )
-                contents = ["Extract resume metadata:\n" + resume_text]
-                if pdf_bytes:
-                    contents.insert(0, types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"))
+        eval_prompt = prompt or (
+            f"Analyze the following text and extract structured information into JSON format.\n"
+            f"Input Text:\n{input_text}"
+        )
 
-                response_primary = self.client.models.generate_content(
-                    model=self.model_name,
-                    contents=contents,
-                    config=config_primary,
-                )
-                if response_primary.text:
-                    extraction = ResumeExtraction.model_validate_json(response_primary.text)
-            except Exception:
-                pass
+        config_primary = types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema=schema,
+            temperature=0.0,
+        )
 
-        if extraction is None:
-            extraction = self._create_fallback_extraction(resume_text)
+        contents = [eval_prompt]
+        if pdf_bytes:
+            contents.insert(0, types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"))
 
-        # Step 2: Pass candidate extraction and original resume to LLM Judge
-        judge_eval: Optional[JudgeEvaluation] = None
+        self.logger.info("Executing %s with primary model %s and judge model %s", self.__class__.__name__, self.model_name, self.judge_model_name)
+        response_primary = self.client.models.generate_content(
+            model=self.model_name,
+            contents=contents,
+            config=config_primary,
+        )
 
+        if not response_primary.text:
+            raise ExtractionValidationError(self.__class__.__name__, "", "Empty API response from primary model")
+
+        try:
+            extraction = schema.model_validate_json(response_primary.text)
+        except Exception as e:
+            raise ExtractionValidationError(self.__class__.__name__, response_primary.text, str(e))
+
+        # Step 2: Pass extraction to secondary LLM Judge
         judge_prompt = f"""
-You are an expert impartial AI Resume Audit Judge.
-Evaluate the primary extraction quality against the raw source resume.
+You are an expert impartial AI Audit Judge.
+Evaluate the primary extraction quality against the raw source text.
 
-[SOURCE RESUME TEXT]
-{resume_text}
+[SOURCE TEXT]
+{input_text}
 
 [CANDIDATE EXTRACTION TO AUDIT]
 {extraction.model_dump_json(indent=2)}
 
 Scoring Rubric (Scale 1.0 to 5.0 for each):
-1. Precision Score: Are extracted domain, role, and skills accurate to source?
+1. Precision Score: Are extracted fields accurate to source text?
 2. Hallucination Score: Is the extraction free of fabricated information? (5.0 = Zero Hallucination, 1.0 = Severe Hallucination)
-3. Completeness Score: Does the extraction cover key candidate qualifications?
+3. Completeness Score: Does the extraction cover key information?
 
 Provide scores and an explicit normalized quality score (0.0 to 1.0).
 """
 
-        if self.client is not None:
-            try:
-                config_judge = types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=JudgeEvaluation,
-                    temperature=0.0,
-                )
-                response_judge = self.client.models.generate_content(
-                    model=self.judge_model_name,
-                    contents=[judge_prompt],
-                    config=config_judge,
-                )
-                if response_judge.text:
-                    judge_eval = JudgeEvaluation.model_validate_json(response_judge.text)
-            except Exception:
-                pass
-
-        if judge_eval is None:
-            # Fallback evaluation calculation
-            p, h, c = 4.5, 4.8, 4.2
-            norm = (p + h + c) / 15.0
-            judge_eval = JudgeEvaluation(
-                precision_score=p,
-                hallucination_score=h,
-                completeness_score=c,
-                justification="Evaluation completed via rule-based fallback judge rubric.",
-                normalized_score=norm,
+        try:
+            config_judge = types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=JudgeEvaluation,
+                temperature=0.0,
             )
+            response_judge = self.client.models.generate_content(
+                model=self.judge_model_name,
+                contents=[judge_prompt],
+                config=config_judge,
+            )
+            if not response_judge.text:
+                raise JudgeEvaluationError(self.__class__.__name__, "Empty judge response text")
+            judge_eval = JudgeEvaluation.model_validate_json(response_judge.text)
+        except Exception as e:
+            raise JudgeEvaluationError(self.__class__.__name__, str(e))
 
         raw_confidence = judge_eval.normalized_score
         calibrated_confidence = judge_eval.normalized_score
@@ -130,5 +146,6 @@ Provide scores and an explicit normalized quality score (0.0 to 1.0).
                 "hallucination_score": judge_eval.hallucination_score,
                 "completeness_score": judge_eval.completeness_score,
                 "justification": judge_eval.justification,
+                "target_schema": schema.__name__,
             },
         )

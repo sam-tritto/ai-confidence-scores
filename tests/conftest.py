@@ -7,8 +7,119 @@ import tempfile
 import pymupdf as fitz  # PyMuPDF
 import pytest
 from unittest.mock import MagicMock
+from pydantic import BaseModel
 
-from src.schema import DomainRole, ResumeExtraction, SeniorityLevel
+from src.schema import (
+    ClaimVerificationResult,
+    ContinuousPromptingOutput,
+    DomainRole,
+    GenericExtraction,
+    GroundingOutput,
+    JudgeEvaluation,
+    ResumeExtraction,
+    SeniorityLevel,
+    VerbalizedConfidenceOutput,
+)
+
+
+def create_mock_gemini_client() -> MagicMock:
+    """Create a mock Google GenAI Client dynamically adapting to any requested response_schema."""
+    client = MagicMock()
+
+    def mock_generate_content(model, contents, config=None, **kwargs):
+        resp = MagicMock()
+        schema = getattr(config, "response_schema", None) if config else None
+        schema_name = getattr(schema, "__name__", "") if schema else ""
+
+        if schema_name == "VerbalizedConfidenceOutput":
+            obj = VerbalizedConfidenceOutput(
+                reasoning="Extracted accurately based on text analysis.",
+                extraction_data={"candidate_name": "Jane Doe", "domain_role": "Data Science"},
+                verbalized_confidence_score=0.88,
+            )
+        elif schema_name == "ContinuousPromptingOutput":
+            obj = ContinuousPromptingOutput(
+                rationale="Detailed chain of thought evaluation shows high certainty.",
+                extraction_data={"candidate_name": "Jane Doe", "domain_role": "Data Science"},
+                confidence_rating_0_to_100=85.0,
+            )
+        elif schema_name == "GroundingOutput":
+            obj = GroundingOutput(
+                claims=[
+                    ClaimVerificationResult(
+                        claim="Senior Data Scientist with 6 years experience",
+                        verdict="SUPPORTED",
+                        evidence_snippet="Senior Data Scientist with 6 years of experience",
+                    )
+                ],
+                grounding_score=1.0,
+            )
+        elif schema_name == "JudgeEvaluation":
+            obj = JudgeEvaluation(
+                precision_score=4.5,
+                hallucination_score=4.8,
+                completeness_score=4.2,
+                justification="Extraction is precise, accurate, and complete.",
+                normalized_score=0.90,
+            )
+        elif schema_name == "GenericExtraction":
+            obj = GenericExtraction(
+                primary_category="Data Science",
+                confidence_estimate=0.9,
+                extracted_fields={"candidate_name": "Jane Doe"},
+                key_claims=["Senior Data Scientist with 6 years experience"],
+                summary="Sample summary",
+            )
+        elif schema is not None and issubclass(schema, BaseModel):
+            try:
+                obj = schema()
+            except Exception:
+                obj = ResumeExtraction(
+                    candidate_name="Jane Doe",
+                    domain_role=DomainRole.DATA_SCIENCE,
+                    seniority_level=SeniorityLevel.SENIOR,
+                    years_of_experience=6.0,
+                    key_skills=["Python", "PyTorch"],
+                    key_claims=["Senior Data Scientist with 6 years experience"],
+                )
+        else:
+            obj = ResumeExtraction(
+                candidate_name="Jane Doe",
+                domain_role=DomainRole.DATA_SCIENCE,
+                seniority_level=SeniorityLevel.SENIOR,
+                years_of_experience=6.0,
+                key_skills=["Python", "PyTorch"],
+                key_claims=["Senior Data Scientist with 6 years experience"],
+            )
+
+        resp.text = obj.model_dump_json()
+
+        # Logprobs mock
+        logprob1 = MagicMock()
+        logprob1.log_probability = -0.10
+        top_cand1 = MagicMock()
+        top_cand1.log_probability = -0.10
+        top_cand2 = MagicMock()
+        top_cand2.log_probability = -2.50
+        logprob1.top_candidates = [top_cand1, top_cand2]
+
+        logprob2 = MagicMock()
+        logprob2.log_probability = -0.15
+        logprob2.top_candidates = [top_cand1, top_cand2]
+
+        mock_candidate = MagicMock()
+        mock_candidate.logprobs_result.chosen_candidates = [logprob1, logprob2]
+        resp.candidates = [mock_candidate]
+        return resp
+
+    client.models.generate_content.side_effect = mock_generate_content
+    return client
+
+
+@pytest.fixture
+def mock_gemini_client() -> MagicMock:
+    """Pytest fixture wrapper for mock Gemini Client."""
+    return create_mock_gemini_client()
 
 
 @pytest.fixture
@@ -68,38 +179,3 @@ def sample_ground_truth() -> ResumeExtraction:
         ],
         raw_text_summary="Experienced Senior Data Scientist.",
     )
-
-
-@pytest.fixture
-def mock_gemini_client() -> MagicMock:
-    """Mock Google GenAI Client for offline deterministic testing."""
-    client = MagicMock()
-    mock_response = MagicMock()
-    mock_response.text = ResumeExtraction(
-        candidate_name="Jane Doe",
-        domain_role=DomainRole.DATA_SCIENCE,
-        seniority_level=SeniorityLevel.SENIOR,
-        years_of_experience=6.0,
-        key_skills=["Python", "PyTorch"],
-        key_claims=["Senior Data Scientist with 6 years experience"],
-    ).model_dump_json()
-
-    # Logprob mock
-    logprob1 = MagicMock()
-    logprob1.log_probability = -0.10
-    top_cand1 = MagicMock()
-    top_cand1.log_probability = -0.10
-    top_cand2 = MagicMock()
-    top_cand2.log_probability = -2.50
-    logprob1.top_candidates = [top_cand1, top_cand2]
-
-    logprob2 = MagicMock()
-    logprob2.log_probability = -0.15
-    logprob2.top_candidates = [top_cand1, top_cand2]
-
-    mock_candidate = MagicMock()
-    mock_candidate.logprobs_result.chosen_candidates = [logprob1, logprob2]
-    mock_response.candidates = [mock_candidate]
-
-    client.models.generate_content.return_value = mock_response
-    return client

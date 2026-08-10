@@ -1,103 +1,121 @@
 """
 8. Grounding & Context Alignment Engine.
-Extracts atomic claims from the output and performs NLI verification against source PDF resume text.
-Grounding Score = Supported Claims / Total Claims
+Extracts atomic claims from output and performs NLI verification against source text.
+Domain-agnostic with configurable Pydantic response schemas.
 """
 
 import time
-from typing import List, Optional
+from typing import Any, List, Optional, Type
+from google import genai
 from google.genai import types
+from pydantic import BaseModel
 
 from src.calibration.base import BaseConfidenceEngine
+from src.exceptions import ExtractionValidationError
 from src.schema import (
     CalibrationResult,
     ClaimVerificationResult,
+    GenericExtraction,
     GroundingOutput,
-    ResumeExtraction,
 )
 
 
 class GroundingAlignmentEngine(BaseConfidenceEngine):
-    """Engine 8: Grounding & Context Alignment Engine.
-    
-    Verifies extracted factual claims against the raw source resume text to calculate
-    the percentage of grounded, verified claims.
-    """
+    """Engine 8: Grounding & Context Alignment Engine."""
+
+    def __init__(
+        self,
+        client: Optional[genai.Client] = None,
+        model_name: Optional[str] = None,
+        audit_threshold: Optional[float] = None,
+        use_vertex: Optional[bool] = None,
+        project: Optional[str] = None,
+        location: Optional[str] = None,
+        api_key: Optional[str] = None,
+    ):
+        super().__init__(
+            client=client,
+            model_name=model_name,
+            audit_threshold=audit_threshold,
+            use_vertex=use_vertex,
+            project=project,
+            location=location,
+            api_key=api_key,
+        )
 
     def evaluate(
         self,
-        resume_text: str,
+        input_text: str,
+        schema: Type[BaseModel] = GenericExtraction,
+        prompt: Optional[str] = None,
         pdf_bytes: Optional[bytes] = None,
-        ground_truth: Optional[ResumeExtraction] = None,
+        ground_truth: Optional[Any] = None,
     ) -> CalibrationResult:
+        self._ensure_client()
         start_time = time.perf_counter()
 
-        # Step 1: Base extraction
-        extraction = None
-        if self.client is not None:
-            try:
-                config = types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=ResumeExtraction,
-                    temperature=0.0,
-                )
-                contents = [
-                    "Analyze the resume and extract candidate metadata including key atomic claims.\n"
-                    f"Resume Text:\n{resume_text}"
-                ]
-                if pdf_bytes:
-                    contents.insert(0, types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"))
+        eval_prompt = prompt or (
+            f"Analyze the following text and extract structured information into JSON format.\n"
+            f"Input Text:\n{input_text}"
+        )
 
-                response = self.client.models.generate_content(
-                    model=self.model_name,
-                    contents=contents,
-                    config=config,
-                )
-                if response.text:
-                    extraction = ResumeExtraction.model_validate_json(response.text)
-            except Exception:
-                pass
+        config = types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema=schema,
+            temperature=0.0,
+        )
 
-        if extraction is None:
-            extraction = self._create_fallback_extraction(resume_text)
+        contents = [eval_prompt]
+        if pdf_bytes:
+            contents.insert(0, types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"))
 
-        # Ensure claims exist
-        claims = extraction.key_claims or [
-            f"Role matches {extraction.domain_role.value}",
-            f"Experience level is {extraction.seniority_level.value}",
-            f"Candidate has {extraction.years_of_experience} years experience",
-        ]
+        self.logger.info("Executing %s with schema %s", self.__class__.__name__, schema.__name__)
+        response = self.client.models.generate_content(
+            model=self.model_name,
+            contents=contents,
+            config=config,
+        )
 
-        # Step 2: Perform NLI / Entailment check against source text
+        if not response.text:
+            raise ExtractionValidationError(self.__class__.__name__, "", "Empty API response text")
+
+        try:
+            extraction = schema.model_validate_json(response.text)
+        except Exception as e:
+            raise ExtractionValidationError(self.__class__.__name__, response.text, str(e))
+
+        # Extract atomic claims
+        claims = getattr(extraction, "key_claims", [])
+        if not claims:
+            claims = [f"Input contains valid {schema.__name__} details."]
+
+        # Step 2: NLI verification
         claim_verifications: List[ClaimVerificationResult] = []
-        text_lower = resume_text.lower()
+        try:
+            verification_prompt = (
+                "You are an NLI (Natural Language Inference) claim verification engine.\n"
+                "For each claim below, verify if it is strictly SUPPORTED by the provided source text.\n"
+                f"Source Text:\n{input_text}\n\n"
+                f"Claims to verify: {claims}"
+            )
+            config_ground = types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=GroundingOutput,
+                temperature=0.0,
+            )
+            resp_ground = self.client.models.generate_content(
+                model=self.model_name,
+                contents=[verification_prompt],
+                config=config_ground,
+            )
+            if resp_ground.text:
+                ground_res = GroundingOutput.model_validate_json(resp_ground.text)
+                claim_verifications = ground_res.claims
+        except Exception as e:
+            self.logger.warning("NLI claim verification API step failed: %s", str(e))
 
-        if self.client is not None:
-            try:
-                verification_prompt = (
-                    "You are an NLI (Natural Language Inference) claim verification engine.\n"
-                    "For each claim below, verify if it is strictly SUPPORTED by the provided source resume text.\n"
-                    f"Source Resume:\n{resume_text}\n\n"
-                    f"Claims to verify: {claims}"
-                )
-                config_ground = types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=GroundingOutput,
-                    temperature=0.0,
-                )
-                resp_ground = self.client.models.generate_content(
-                    model=self.model_name,
-                    contents=[verification_prompt],
-                    config=config_ground,
-                )
-                if resp_ground.text:
-                    ground_res = GroundingOutput.model_validate_json(resp_ground.text)
-                    claim_verifications = ground_res.claims
-            except Exception:
-                pass
-
-        # Heuristic NLI fallback if API NLI call is omitted/fails
         if not claim_verifications:
+            text_lower = input_text.lower()
             for claim in claims:
                 claim_words = [w.lower() for w in claim.split() if len(w) > 3]
                 match_count = sum(1 for w in claim_words if w in text_lower)
@@ -132,6 +150,6 @@ class GroundingAlignmentEngine(BaseConfidenceEngine):
                 "total_claims": total_claims,
                 "supported_claims": supported_count,
                 "grounding_score": grounding_score,
-                "verifications": [c.model_dump() for c in claim_verifications],
+                "target_schema": schema.__name__,
             },
         )

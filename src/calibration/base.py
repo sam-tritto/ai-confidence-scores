@@ -1,21 +1,26 @@
 """
 Abstract Base Class for Confidence Evaluation Engines.
+Domain-agnostic with configurable Pydantic response schemas and explicit error handling.
 """
 
 from abc import ABC, abstractmethod
+import logging
 import os
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Type
+from dotenv import load_dotenv
 from google import genai
-from google.genai import types
+from pydantic import BaseModel
 
+from src.exceptions import ClientNotConfiguredError
 from src.schema import (
     AuditDecision,
     CalibrationResult,
-    DomainRole,
-    ResumeExtraction,
-    SeniorityLevel,
+    GenericExtraction,
 )
+
+# Load environment variables automatically from .env file
+load_dotenv()
 
 
 class BaseConfidenceEngine(ABC):
@@ -24,83 +29,69 @@ class BaseConfidenceEngine(ABC):
     def __init__(
         self,
         client: Optional[genai.Client] = None,
-        model_name: str = "gemini-2.5-flash",
-        audit_threshold: float = 0.75,
+        model_name: Optional[str] = None,
+        audit_threshold: Optional[float] = None,
+        use_vertex: Optional[bool] = None,
+        project: Optional[str] = None,
+        location: Optional[str] = None,
+        api_key: Optional[str] = None,
     ):
-        self.model_name = os.getenv("GEMINI_MODEL", model_name)
-        self.audit_threshold = float(os.getenv("AUDIT_CONFIDENCE_THRESHOLD", str(audit_threshold)))
-        
+        load_dotenv()
+
+        is_vertex = (
+            use_vertex
+            if use_vertex is not None
+            else os.getenv("USE_VERTEX_AI", "false").lower() in ("true", "1")
+        )
+        self.use_vertex = is_vertex
+
+        # Select provider-specific default model unless explicitly overridden
+        if is_vertex:
+            default_model = os.getenv("VERTEX_GEMINI_MODEL", os.getenv("GEMINI_MODEL", "gemini-3.6-flash"))
+        else:
+            default_model = os.getenv("API_KEY_GEMINI_MODEL", os.getenv("GEMINI_MODEL", "gemini-2.0-flash"))
+
+        self.model_name = model_name or default_model
+
+        env_threshold = os.getenv("AUDIT_CONFIDENCE_THRESHOLD", "0.75")
+        self.audit_threshold = float(audit_threshold if audit_threshold is not None else env_threshold)
+        self.logger = logging.getLogger(self.__class__.__name__)
+
         if client is not None:
             self.client = client
         else:
-            api_key = os.getenv("GEMINI_API_KEY")
-            if api_key:
-                self.client = genai.Client(api_key=api_key)
+            gcp_project = project or os.getenv("GOOGLE_CLOUD_PROJECT")
+            gcp_location = location or os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+            key = api_key or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+
+            if self.use_vertex and gcp_project:
+                self.client = genai.Client(vertexai=True, project=gcp_project, location=gcp_location)
+            elif key:
+                self.client = genai.Client(api_key=key)
             else:
                 self.client = None
+
+    def _ensure_client(self) -> None:
+        """Verify client configuration or raise explicit ClientNotConfiguredError."""
+        if self.client is None:
+            err = ClientNotConfiguredError(self.__class__.__name__)
+            self.logger.error(str(err))
+            raise err
+
+    def determine_audit_decision(self, confidence_score: float) -> AuditDecision:
+        """Map confidence score to AUTOMATE or FLAG_FOR_HUMAN_REVIEW."""
+        if confidence_score >= self.audit_threshold:
+            return AuditDecision.AUTOMATE
+        return AuditDecision.FLAG_FOR_HUMAN_REVIEW
 
     @abstractmethod
     def evaluate(
         self,
-        resume_text: str,
+        input_text: str,
+        schema: Type[BaseModel] = GenericExtraction,
+        prompt: Optional[str] = None,
         pdf_bytes: Optional[bytes] = None,
-        ground_truth: Optional[ResumeExtraction] = None,
+        ground_truth: Optional[Any] = None,
     ) -> CalibrationResult:
-        """Evaluate resume text and return structured extraction with calibrated confidence score."""
+        """Evaluate input text against target schema and return calibrated confidence score."""
         pass
-
-    def determine_audit_decision(self, confidence: float) -> AuditDecision:
-        """Route to automated processing vs human review based on threshold."""
-        if confidence >= self.audit_threshold:
-            return AuditDecision.AUTOMATE
-        return AuditDecision.FLAG_FOR_HUMAN_REVIEW
-
-    def _create_fallback_extraction(self, resume_text: str) -> ResumeExtraction:
-        """Rule-based heuristic fallback extraction when API key is missing or offline mode is used."""
-        text_lower = resume_text.lower()
-        
-        # Domain Role Heuristic
-        if "data scientist" in text_lower or "machine learning" in text_lower or "python" in text_lower and "model" in text_lower:
-            role = DomainRole.DATA_SCIENCE
-        elif "software" in text_lower or "developer" in text_lower or "full stack" in text_lower or "backend" in text_lower:
-            role = DomainRole.SOFTWARE_ENGINEERING
-        elif "finance" in text_lower or "accounting" in text_lower or "investment" in text_lower:
-            role = DomainRole.FINANCE
-        elif "recruiter" in text_lower or "hr" in text_lower or "talent" in text_lower:
-            role = DomainRole.HUMAN_RESOURCES
-        elif "sales" in text_lower or "business development" in text_lower or "marketing" in text_lower:
-            role = DomainRole.BUSINESS_DEVELOPMENT
-        else:
-            role = DomainRole.OTHER
-
-        # Seniority Heuristic
-        if "senior" in text_lower or "sr." in text_lower:
-            seniority = SeniorityLevel.SENIOR
-        elif "lead" in text_lower or "manager" in text_lower or "head" in text_lower:
-            seniority = SeniorityLevel.LEAD_MANAGEMENT
-        elif "junior" in text_lower or "associate" in text_lower:
-            seniority = SeniorityLevel.JUNIOR
-        elif "intern" in text_lower:
-            seniority = SeniorityLevel.INTERN
-        elif "vp" in text_lower or "chief" in text_lower:
-            seniority = SeniorityLevel.EXECUTIVE
-        else:
-            seniority = SeniorityLevel.MID_LEVEL
-
-        # Extract lines as claims
-        lines = [line.strip() for line in resume_text.splitlines() if len(line.strip()) > 15]
-        key_claims = lines[:4] if lines else ["Candidate has relevant experience."]
-        
-        # Extract skills keyword search
-        skills_candidates = ["Python", "SQL", "Machine Learning", "Java", "Docker", "AWS", "PyTorch", "Finance", "Communication"]
-        key_skills = [s for s in skills_candidates if s.lower() in text_lower]
-
-        return ResumeExtraction(
-            candidate_name="Extracted Candidate",
-            domain_role=role,
-            seniority_level=seniority,
-            years_of_experience=5.0,
-            key_skills=key_skills or ["General"],
-            key_claims=key_claims,
-            raw_text_summary=f"Resume for candidate in {role.value} with {seniority.value} experience.",
-        )

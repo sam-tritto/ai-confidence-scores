@@ -1,10 +1,11 @@
 """
 Pydantic Schemas for AI Confidence Scores evaluation and calibration engine.
+Supports configurable domain-agnostic schemas and specialized extraction models.
 """
 
 from enum import Enum
-from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field, field_validator
+from typing import Any, Dict, List, Optional, Type
+from pydantic import BaseModel, Field
 
 
 class DomainRole(str, Enum):
@@ -65,26 +66,40 @@ class AuditDecision(str, Enum):
     FLAG_FOR_HUMAN_REVIEW = "FLAG_FOR_HUMAN_REVIEW"
 
 
+class GenericExtraction(BaseModel):
+    """Domain-agnostic generic extraction schema for any text classification task."""
+    primary_category: str = Field(default="Unspecified", description="Primary category or label classified from text")
+    confidence_estimate: Optional[float] = Field(default=None, description="Optional raw model confidence estimate")
+    extracted_fields: Dict[str, Any] = Field(default_factory=dict, description="Key-value pairs of extracted attributes")
+    key_claims: List[str] = Field(default_factory=list, description="List of key factual claims extracted from input text")
+    summary: Optional[str] = Field(default=None, description="Brief summary of input text")
+
+
 class ResumeExtraction(BaseModel):
+    """Specialized extraction schema for PDF Resume classification benchmark."""
     candidate_name: str = Field(default="Unknown Candidate", description="Full name of the candidate")
     domain_role: DomainRole = Field(default=DomainRole.OTHER, description="Classified professional domain role")
     seniority_level: SeniorityLevel = Field(default=SeniorityLevel.OTHER, description="Extracted candidate seniority level")
     years_of_experience: float = Field(default=0.0, description="Estimated total years of professional experience")
     key_skills: List[str] = Field(default_factory=list, description="Top technical and professional skills extracted")
     key_claims: List[str] = Field(default_factory=list, description="Atomic factual claims extracted from the resume")
-    raw_text_summary: Optional[str] = Field(default=None, description="Brief overall summary of the candidate profile")
+    raw_text_summary: Optional[str] = Field(default=None, description="Brief overall summary of candidate profile")
+
+
+class CustomerSupportTicket(BaseModel):
+    """Example custom user-defined schema for customer support classification."""
+    ticket_id: str = Field(default="TICK-000")
+    issue_category: str = Field(default="General Inquiry")
+    urgency_level: str = Field(default="Low")
+    affected_product: str = Field(default="Core Platform")
+    key_claims: List[str] = Field(default_factory=list)
 
 
 class VerbalizedConfidenceOutput(BaseModel):
-    reasoning: str = Field(description="Step-by-step reasoning for the extraction and confidence score")
-    candidate_name: str = Field(default="Unknown Candidate")
-    domain_role: DomainRole = Field(default=DomainRole.OTHER)
-    seniority_level: SeniorityLevel = Field(default=SeniorityLevel.OTHER)
-    years_of_experience: float = Field(default=0.0)
-    key_skills: List[str] = Field(default_factory=list)
-    key_claims: List[str] = Field(default_factory=list)
+    reasoning: str = Field(description="Step-by-step reasoning for extraction and confidence score")
+    extraction_data: Dict[str, Any] = Field(default_factory=dict, description="Structured extracted data matching schema")
     verbalized_confidence_score: float = Field(
-        description="Self-assessed confidence score between 0.0 (completely uncertain) and 1.0 (certain)",
+        description="Self-assessed confidence score between 0.0 and 1.0",
         ge=0.0,
         le=1.0,
     )
@@ -92,14 +107,9 @@ class VerbalizedConfidenceOutput(BaseModel):
 
 class ContinuousPromptingOutput(BaseModel):
     rationale: str = Field(description="Detailed rationale explaining certainty level")
-    extracted_domain_role: DomainRole = Field(default=DomainRole.OTHER)
-    extracted_seniority: SeniorityLevel = Field(default=SeniorityLevel.OTHER)
-    candidate_name: str = Field(default="Unknown Candidate")
-    years_of_experience: float = Field(default=0.0)
-    key_skills: List[str] = Field(default_factory=list)
-    key_claims: List[str] = Field(default_factory=list)
+    extraction_data: Dict[str, Any] = Field(default_factory=dict, description="Structured extracted data matching schema")
     confidence_rating_0_to_100: float = Field(
-        description="Continuous integer rating from 0 to 100 representing confidence",
+        description="Continuous rating from 0 to 100 representing confidence",
         ge=0.0,
         le=100.0,
     )
@@ -108,12 +118,12 @@ class ContinuousPromptingOutput(BaseModel):
 class ClaimVerificationResult(BaseModel):
     claim: str = Field(description="Atomic factual claim extracted from LLM completion")
     verdict: str = Field(description="Verdict: SUPPORTED, CONTRADICTED, or UNVERIFIABLE")
-    evidence_snippet: Optional[str] = Field(default=None, description="Direct matching snippet from PDF text if supported")
+    evidence_snippet: Optional[str] = Field(default=None, description="Direct matching snippet from source text if supported")
 
 
 class GroundingOutput(BaseModel):
     claims: List[ClaimVerificationResult] = Field(default_factory=list)
-    grounding_score: float = Field(description="Fraction of claims supported by source PDF text", ge=0.0, le=1.0)
+    grounding_score: float = Field(description="Fraction of claims supported by source text", ge=0.0, le=1.0)
 
 
 class JudgeEvaluation(BaseModel):
@@ -125,20 +135,20 @@ class JudgeEvaluation(BaseModel):
 
 
 class CalibrationResult(BaseModel):
-    engine_name: str = Field(description="Name of the confidence evaluation engine")
-    extraction: ResumeExtraction = Field(description="Structured resume extraction output")
+    engine_name: str = Field(description="Name of confidence evaluation engine")
+    extraction: Any = Field(description="Structured extraction output object (Pydantic model instance)")
     raw_confidence: float = Field(description="Uncalibrated confidence score (0.0 to 1.0)")
     calibrated_confidence: float = Field(description="Calibrated confidence score (0.0 to 1.0)")
-    audit_decision: AuditDecision = Field(description="Human-in-the-loop audit routing flag (AUTOMATE vs FLAG_FOR_HUMAN_REVIEW)")
+    audit_decision: AuditDecision = Field(description="Human-in-the-loop audit routing flag")
     latency_ms: float = Field(description="Execution latency in milliseconds")
-    metadata: Dict[str, Any] = Field(default_factory=dict, description="Engine specific intermediate artifacts and metrics")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Engine specific intermediate metrics")
 
 
 class EvaluationMetrics(BaseModel):
     engine_name: str
     accuracy: float
-    ece: float  # Expected Calibration Error
-    mce: float  # Maximum Calibration Error
+    ece: float
+    mce: float
     brier_score: float
     mean_confidence: float
     mean_latency_ms: float
