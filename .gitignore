@@ -2,3 +2,5 @@
 
 
 .env
+src/.DS_Store
+notebooks/.DS_Store
