@@ -96,19 +96,41 @@ class LogProbDeltaEngine(BaseConfidenceEngine):
             if response.candidates and len(response.candidates) > 0:
                 candidate = response.candidates[0]
                 if hasattr(candidate, "logprobs_result") and candidate.logprobs_result:
-                    chosen = getattr(candidate.logprobs_result, "chosen_candidates", [])
-                    for chosen_cand in chosen:
-                        top_candidates = getattr(chosen_cand, "top_candidates", [])
-                        if len(top_candidates) >= 2:
-                            p1 = top_candidates[0].log_probability
-                            p2 = top_candidates[1].log_probability
-                            if p1 is not None and p2 is not None:
-                                deltas.append(abs(p1 - p2))
+                    logprobs_res = candidate.logprobs_result
+
+                    # Primary: check logprobs_result.top_candidates (google-genai SDK format)
+                    top_cands_list = getattr(logprobs_res, "top_candidates", [])
+                    if top_cands_list:
+                        for top_cand_group in top_cands_list:
+                            cands = getattr(top_cand_group, "candidates", getattr(top_cand_group, "top_candidates", []))
+                            if isinstance(cands, list) and len(cands) >= 2:
+                                p1 = getattr(cands[0], "log_probability", None)
+                                p2 = getattr(cands[1], "log_probability", None)
+                                if p1 is not None and p2 is not None:
+                                    p1_val = max(p1, -100.0)
+                                    p2_val = max(p2, -100.0)
+                                    deltas.append(abs(p1_val - p2_val))
+
+                    # Fallback: check chosen_candidates[i].top_candidates (legacy/mock format)
+                    if not deltas:
+                        chosen = getattr(logprobs_res, "chosen_candidates", [])
+                        for chosen_cand in chosen:
+                            top_candidates = getattr(chosen_cand, "top_candidates", [])
+                            if isinstance(top_candidates, list) and len(top_candidates) >= 2:
+                                p1 = getattr(top_candidates[0], "log_probability", None)
+                                p2 = getattr(top_candidates[1], "log_probability", None)
+                                if p1 is not None and p2 is not None:
+                                    p1_val = max(p1, -100.0)
+                                    p2_val = max(p2, -100.0)
+                                    deltas.append(abs(p1_val - p2_val))
         except Exception as e:
             self.logger.warning("Failed to extract logprob top-2 deltas: %s", str(e))
 
         if not deltas:
-            raise LogProbsUnavailableError(self.__class__.__name__, f"Model '{self.model_name}' did not return valid top-2 token alternative logprobs.")
+            raise LogProbsUnavailableError(
+                self.__class__.__name__,
+                f"Model '{self.model_name}' did not return valid top-2 token alternative logprobs."
+            )
 
         mean_delta = float(sum(deltas) / len(deltas))
         # Logistic sigmoid mapping of delta: 1 / (1 + exp(-delta))

@@ -47,9 +47,9 @@ class BaseConfidenceEngine(ABC):
 
         # Select provider-specific default model unless explicitly overridden
         if is_vertex:
-            default_model = os.getenv("VERTEX_GEMINI_MODEL", os.getenv("GEMINI_MODEL", "gemini-3.6-flash"))
+            default_model = os.getenv("VERTEX_GEMINI_MODEL", os.getenv("GEMINI_MODEL", "gemini-3.5-flash"))
         else:
-            default_model = os.getenv("API_KEY_GEMINI_MODEL", os.getenv("GEMINI_MODEL", "gemini-2.0-flash"))
+            default_model = os.getenv("API_KEY_GEMINI_MODEL", os.getenv("GEMINI_MODEL", "gemini-3.5-flash"))
 
         self.model_name = model_name or default_model
 
