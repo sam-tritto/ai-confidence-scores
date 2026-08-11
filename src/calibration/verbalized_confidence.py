@@ -71,8 +71,7 @@ class VerbalizedConfidenceEngine(BaseConfidenceEngine):
             contents.insert(0, types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"))
 
         self.logger.info("Executing %s with target schema %s", self.__class__.__name__, schema.__name__)
-        response = self.client.models.generate_content(
-            model=self.model_name,
+        response = self._generate_content_with_retry(
             contents=contents,
             config=config,
         )

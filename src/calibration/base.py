@@ -47,9 +47,9 @@ class BaseConfidenceEngine(ABC):
 
         # Select provider-specific default model unless explicitly overridden
         if is_vertex:
-            default_model = os.getenv("VERTEX_GEMINI_MODEL", os.getenv("GEMINI_MODEL", "gemini-3.5-flash"))
+            default_model = os.getenv("VERTEX_GEMINI_MODEL", os.getenv("GEMINI_MODEL", "gemini-2.5-flash"))
         else:
-            default_model = os.getenv("API_KEY_GEMINI_MODEL", os.getenv("GEMINI_MODEL", "gemini-3.5-flash"))
+            default_model = os.getenv("API_KEY_GEMINI_MODEL", os.getenv("GEMINI_MODEL", "gemini-2.5-flash"))
 
         self.model_name = model_name or default_model
 
@@ -83,6 +83,39 @@ class BaseConfidenceEngine(ABC):
         if confidence_score >= self.audit_threshold:
             return AuditDecision.AUTOMATE
         return AuditDecision.FLAG_FOR_HUMAN_REVIEW
+
+    def _generate_content_with_retry(
+        self,
+        contents: Any,
+        config: Any,
+        max_retries: int = 5,
+        backoff_factor: float = 2.0,
+        override_model: Optional[str] = None,
+    ) -> Any:
+        """Call client.models.generate_content with exponential backoff on 429 RESOURCE_EXHAUSTED errors."""
+        self._ensure_client()
+        target_model = override_model or self.model_name
+        delay = 2.0
+        for attempt in range(max_retries):
+            try:
+                return self.client.models.generate_content(
+                    model=target_model,
+                    contents=contents,
+                    config=config,
+                )
+            except Exception as e:
+                err_str = str(e)
+                if ("429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "quota" in err_str.lower()) and attempt < max_retries - 1:
+                    self.logger.warning(
+                        "Rate limit (429 RESOURCE_EXHAUSTED) hit on attempt %d/%d. Retrying in %.1fs...",
+                        attempt + 1,
+                        max_retries,
+                        delay,
+                    )
+                    time.sleep(delay)
+                    delay *= backoff_factor
+                else:
+                    raise e
 
     @abstractmethod
     def evaluate(

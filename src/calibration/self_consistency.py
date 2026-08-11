@@ -74,8 +74,7 @@ class SelfConsistencyEngine(BaseConfidenceEngine):
 
         for _ in range(self.num_samples):
             try:
-                response = self.client.models.generate_content(
-                    model=self.model_name,
+                response = self._generate_content_with_retry(
                     contents=contents,
                     config=config,
                 )

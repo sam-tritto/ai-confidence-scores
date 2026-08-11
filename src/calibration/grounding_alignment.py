@@ -70,8 +70,7 @@ class GroundingAlignmentEngine(BaseConfidenceEngine):
             contents.insert(0, types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"))
 
         self.logger.info("Executing %s with schema %s", self.__class__.__name__, schema.__name__)
-        response = self.client.models.generate_content(
-            model=self.model_name,
+        response = self._generate_content_with_retry(
             contents=contents,
             config=config,
         )
@@ -103,8 +102,7 @@ class GroundingAlignmentEngine(BaseConfidenceEngine):
                 response_schema=GroundingOutput,
                 temperature=0.0,
             )
-            resp_ground = self.client.models.generate_content(
-                model=self.model_name,
+            resp_ground = self._generate_content_with_retry(
                 contents=[verification_prompt],
                 config=config_ground,
             )

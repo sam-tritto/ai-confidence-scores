@@ -77,8 +77,7 @@ class LLMAsAJudgeEngine(BaseConfidenceEngine):
             contents.insert(0, types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"))
 
         self.logger.info("Executing %s with primary model %s and judge model %s", self.__class__.__name__, self.model_name, self.judge_model_name)
-        response_primary = self.client.models.generate_content(
-            model=self.model_name,
+        response_primary = self._generate_content_with_retry(
             contents=contents,
             config=config_primary,
         )
@@ -116,10 +115,10 @@ Provide scores and an explicit normalized quality score (0.0 to 1.0).
                 response_schema=JudgeEvaluation,
                 temperature=0.0,
             )
-            response_judge = self.client.models.generate_content(
-                model=self.judge_model_name,
+            response_judge = self._generate_content_with_retry(
                 contents=[judge_prompt],
                 config=config_judge,
+                override_model=self.judge_model_name,
             )
             if not response_judge.text:
                 raise JudgeEvaluationError(self.__class__.__name__, "Empty judge response text")

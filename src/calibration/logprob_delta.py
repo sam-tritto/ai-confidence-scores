@@ -4,6 +4,7 @@ Isolates top-token dominance margin: Delta = top_1_logprob - top_2_logprob.
 Domain-agnostic with configurable Pydantic response schemas.
 """
 
+from enum import Enum
 import math
 import time
 from typing import Any, Optional, Type
@@ -55,8 +56,11 @@ class LogProbDeltaEngine(BaseConfidenceEngine):
             f"Input Text:\n{input_text}"
         )
 
+        is_enum = isinstance(schema, type) and issubclass(schema, Enum)
+        mime_type = "text/x.enum" if is_enum else "application/json"
+
         config = types.GenerateContentConfig(
-            response_mime_type="application/json",
+            response_mime_type=mime_type,
             response_schema=schema,
             response_logprobs=True,
             logprobs=5,
@@ -69,8 +73,7 @@ class LogProbDeltaEngine(BaseConfidenceEngine):
 
         self.logger.info("Executing %s with schema %s on model %s", self.__class__.__name__, schema.__name__, self.model_name)
         try:
-            response = self.client.models.generate_content(
-                model=self.model_name,
+            response = self._generate_content_with_retry(
                 contents=contents,
                 config=config,
             )
@@ -79,7 +82,7 @@ class LogProbDeltaEngine(BaseConfidenceEngine):
             if "Logprobs is not enabled" in err_str or "INVALID_ARGUMENT" in err_str or "logprobs" in err_str.lower():
                 raise LogProbsUnavailableError(
                     self.__class__.__name__,
-                    f"Logprobs are not enabled for model '{self.model_name}'. Please switch GEMINI_MODEL to a supported model such as 'gemini-2.0-flash' or 'gemini-1.5-flash'. Original error: {err_str}"
+                    f"Logprobs are not enabled for model '{self.model_name}'. Please set GEMINI_MODEL to 'gemini-2.5-flash'. Original error: {err_str}"
                 )
             raise e
 

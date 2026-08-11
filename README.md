@@ -80,7 +80,7 @@ Extracts atomic factual claims from the output and performs Natural Language Inf
 $$\text{Grounding Score} = \frac{\text{Supported Claims}}{\text{Total Claims}}$$
 
 ### 9. Two-Tier Evaluator Engine (`LLMAsAJudgeEngine`)
-Submits candidate extractions to a secondary judge instance (`gemini-3.5-flash`) with an evaluation rubric scoring precision, hallucination risk, and completeness (1–5 scale), normalized to $[0.0, 1.0]$.
+Submits candidate extractions to a secondary judge instance (`gemini-2.5-flash`) with an evaluation rubric scoring precision, hallucination risk, and completeness (1–5 scale), normalized to $[0.0, 1.0]$.
 
 ---
 
