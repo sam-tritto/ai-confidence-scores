@@ -1,5 +1,5 @@
 """
-7. Continuous Numerical Prompting Engine.
+4. Continuous Numerical Prompting Method.
 Prompts the model for a continuous integer rating (0-100) alongside chain-of-thought rationale.
 Domain-agnostic with configurable Pydantic response schemas.
 """
@@ -10,7 +10,7 @@ from google import genai
 from google.genai import types
 from pydantic import BaseModel
 
-from src.calibration.base import BaseConfidenceEngine
+from src.calibration.base import BaseConfidenceMethod
 from src.exceptions import ExtractionValidationError
 from src.schema import (
     CalibrationResult,
@@ -19,8 +19,8 @@ from src.schema import (
 )
 
 
-class ContinuousPromptingEngine(BaseConfidenceEngine):
-    """Engine 7: Continuous Numerical Prompting Engine."""
+class ContinuousPromptingMethod(BaseConfidenceMethod):
+    """Method 4: Continuous Numerical Prompting Method."""
 
     def __init__(
         self,
@@ -103,7 +103,7 @@ class ContinuousPromptingEngine(BaseConfidenceEngine):
         decision = self.determine_audit_decision(calibrated_confidence)
 
         return CalibrationResult(
-            engine_name="Continuous Numerical Prompting",
+            method_name="Continuous Numerical Prompting",
             extraction=extraction,
             raw_confidence=raw_confidence,
             calibrated_confidence=calibrated_confidence,

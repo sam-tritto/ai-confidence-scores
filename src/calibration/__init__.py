@@ -1,27 +1,21 @@
 """
-Calibration Engine Module exporting BaseConfidenceEngine and all 9 specialized frameworks.
+Calibration Method Module exporting BaseConfidenceMethod and all 6 specialized frameworks.
 """
 
-from src.calibration.base import BaseConfidenceEngine
-from src.calibration.native_logprob import NativeLogProbEngine
-from src.calibration.logprob_delta import LogProbDeltaEngine
-from src.calibration.temperature_scaling import TemperatureScalingEngine
-from src.calibration.platt_scaling import PlattScalingEngine
-from src.calibration.self_consistency import SelfConsistencyEngine
-from src.calibration.verbalized_confidence import VerbalizedConfidenceEngine
-from src.calibration.continuous_prompting import ContinuousPromptingEngine
-from src.calibration.grounding_alignment import GroundingAlignmentEngine
-from src.calibration.llm_as_a_judge import LLMAsAJudgeEngine
+from src.calibration.base import BaseConfidenceMethod
+from src.calibration.native_logprob import NativeLogProbMethod
+from src.calibration.logprob_delta import LogProbDeltaMethod
+from src.calibration.temperature_scaling import TemperatureScalingMethod
+from src.calibration.continuous_prompting import ContinuousPromptingMethod
+from src.calibration.grounding_alignment import GroundingAlignmentMethod
+from src.calibration.llm_as_a_judge import LLMAsAJudgeMethod
 
 __all__ = [
-    "BaseConfidenceEngine",
-    "NativeLogProbEngine",
-    "LogProbDeltaEngine",
-    "TemperatureScalingEngine",
-    "PlattScalingEngine",
-    "SelfConsistencyEngine",
-    "VerbalizedConfidenceEngine",
-    "ContinuousPromptingEngine",
-    "GroundingAlignmentEngine",
-    "LLMAsAJudgeEngine",
+    "BaseConfidenceMethod",
+    "NativeLogProbMethod",
+    "LogProbDeltaMethod",
+    "TemperatureScalingMethod",
+    "ContinuousPromptingMethod",
+    "GroundingAlignmentMethod",
+    "LLMAsAJudgeMethod",
 ]

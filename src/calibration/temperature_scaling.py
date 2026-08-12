@@ -1,5 +1,5 @@
 """
-3. Post-Hoc Temperature Scaling Engine.
+3. Post-Hoc Temperature Scaling Method.
 Fits temperature parameter T > 1 on logit/logprob values via NLL optimization.
 Domain-agnostic with configurable Pydantic response schemas.
 """
@@ -14,13 +14,13 @@ import numpy as np
 from pydantic import BaseModel
 from scipy.optimize import minimize
 
-from src.calibration.base import BaseConfidenceEngine
+from src.calibration.base import BaseConfidenceMethod
 from src.exceptions import ExtractionValidationError, LogProbsUnavailableError
 from src.schema import CalibrationResult, GenericExtraction
 
 
-class TemperatureScalingEngine(BaseConfidenceEngine):
-    """Engine 3: Post-Hoc Temperature Scaling Engine."""
+class TemperatureScalingMethod(BaseConfidenceMethod):
+    """Method 3: Post-Hoc Temperature Scaling Method."""
 
     def __init__(
         self,
@@ -143,7 +143,7 @@ class TemperatureScalingEngine(BaseConfidenceEngine):
         decision = self.determine_audit_decision(calibrated_confidence)
 
         return CalibrationResult(
-            engine_name="Temperature Scaling",
+            method_name="Temperature Scaling",
             extraction=extraction,
             raw_confidence=raw_confidence,
             calibrated_confidence=calibrated_confidence,

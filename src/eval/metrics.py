@@ -81,7 +81,7 @@ def calculate_ece_mce(
 
 
 def compute_suite_metrics(
-    engine_name: str,
+    method_name: str,
     y_true: np.ndarray,
     y_pred: np.ndarray,
     y_prob: np.ndarray,
@@ -89,7 +89,7 @@ def compute_suite_metrics(
     audit_decisions: List[str],
     n_bins: int = 10,
 ) -> EvaluationMetrics:
-    """Calculate comprehensive evaluation metrics for a single calibration engine."""
+    """Calculate comprehensive evaluation metrics for a single calibration method."""
     accuracy = calculate_accuracy(y_true, y_pred)
     brier_score = calculate_brier_score(y_true, y_prob)
     ece, mce, _ = calculate_ece_mce(y_true, y_prob, n_bins=n_bins)
@@ -98,7 +98,7 @@ def compute_suite_metrics(
     automate_ratio = float(np.mean([1 if d == "AUTOMATE" else 0 for d in audit_decisions])) if audit_decisions else 0.0
 
     return EvaluationMetrics(
-        engine_name=engine_name,
+        method_name=method_name,
         accuracy=accuracy,
         ece=ece,
         mce=mce,
@@ -114,7 +114,7 @@ def summarize_benchmark(metrics_list: List[EvaluationMetrics]) -> pd.DataFrame:
     records = []
     for m in metrics_list:
         records.append({
-            "Framework Engine": m.engine_name,
+            "Framework Method": m.method_name,
             "Accuracy": m.accuracy,
             "ECE": m.ece,
             "MCE": m.mce,

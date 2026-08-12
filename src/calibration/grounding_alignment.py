@@ -1,5 +1,5 @@
 """
-8. Grounding & Context Alignment Engine.
+5. Grounding & Context Alignment Method.
 Extracts atomic claims from output and performs NLI verification against source text.
 Domain-agnostic with configurable Pydantic response schemas.
 """
@@ -10,7 +10,7 @@ from google import genai
 from google.genai import types
 from pydantic import BaseModel
 
-from src.calibration.base import BaseConfidenceEngine
+from src.calibration.base import BaseConfidenceMethod
 from src.exceptions import ExtractionValidationError
 from src.schema import (
     CalibrationResult,
@@ -20,8 +20,8 @@ from src.schema import (
 )
 
 
-class GroundingAlignmentEngine(BaseConfidenceEngine):
-    """Engine 8: Grounding & Context Alignment Engine."""
+class GroundingAlignmentMethod(BaseConfidenceMethod):
+    """Method 5: Grounding & Context Alignment Method."""
 
     def __init__(
         self,
@@ -138,7 +138,7 @@ class GroundingAlignmentEngine(BaseConfidenceEngine):
         decision = self.determine_audit_decision(calibrated_confidence)
 
         return CalibrationResult(
-            engine_name="Grounding & Alignment",
+            method_name="Grounding & Alignment",
             extraction=extraction,
             raw_confidence=raw_confidence,
             calibrated_confidence=calibrated_confidence,

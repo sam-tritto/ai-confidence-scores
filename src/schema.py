@@ -1,5 +1,5 @@
 """
-Pydantic Schemas for AI Confidence Scores evaluation and calibration engine.
+Pydantic Schemas for AI Confidence Scores evaluation and calibration method.
 Supports configurable domain-agnostic schemas and specialized extraction models.
 """
 
@@ -95,16 +95,6 @@ class CustomerSupportTicket(BaseModel):
     key_claims: List[str] = Field(default_factory=list)
 
 
-class VerbalizedConfidenceOutput(BaseModel):
-    reasoning: str = Field(description="Step-by-step reasoning for extraction and confidence score")
-    extraction_data: Dict[str, Any] = Field(default_factory=dict, description="Structured extracted data matching schema")
-    verbalized_confidence_score: float = Field(
-        description="Self-assessed confidence score between 0.0 and 1.0",
-        ge=0.0,
-        le=1.0,
-    )
-
-
 class ContinuousPromptingOutput(BaseModel):
     rationale: str = Field(description="Detailed rationale explaining certainty level")
     extraction_data: Dict[str, Any] = Field(default_factory=dict, description="Structured extracted data matching schema")
@@ -135,17 +125,17 @@ class JudgeEvaluation(BaseModel):
 
 
 class CalibrationResult(BaseModel):
-    engine_name: str = Field(description="Name of confidence evaluation engine")
+    method_name: str = Field(description="Name of confidence evaluation method")
     extraction: Any = Field(description="Structured extraction output object (Pydantic model instance)")
     raw_confidence: float = Field(description="Uncalibrated confidence score (0.0 to 1.0)")
     calibrated_confidence: float = Field(description="Calibrated confidence score (0.0 to 1.0)")
     audit_decision: AuditDecision = Field(description="Human-in-the-loop audit routing flag")
     latency_ms: float = Field(description="Execution latency in milliseconds")
-    metadata: Dict[str, Any] = Field(default_factory=dict, description="Engine specific intermediate metrics")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Method specific intermediate metrics")
 
 
 class EvaluationMetrics(BaseModel):
-    engine_name: str
+    method_name: str
     accuracy: float
     ece: float
     mce: float

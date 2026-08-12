@@ -1,5 +1,5 @@
 """
-Abstract Base Class for Confidence Evaluation Engines.
+Abstract Base Class for Confidence Evaluation Methods.
 Domain-agnostic with configurable Pydantic response schemas and explicit error handling.
 """
 
@@ -23,8 +23,8 @@ from src.schema import (
 load_dotenv()
 
 
-class BaseConfidenceEngine(ABC):
-    """Abstract base class for LLM confidence calibration engines."""
+class BaseConfidenceMethod(ABC):
+    """Abstract base class for LLM confidence calibration methods."""
 
     def __init__(
         self,

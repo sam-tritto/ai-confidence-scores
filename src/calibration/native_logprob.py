@@ -1,5 +1,5 @@
 """
-1. Native Token LogProb Engine.
+1. Native Token LogProb Method.
 Calculates joint sequence confidence: Confidence = exp( (1/N) * sum(logprob_i) ).
 Domain-agnostic with configurable Pydantic response schemas.
 """
@@ -12,13 +12,13 @@ from google import genai
 from google.genai import types
 from pydantic import BaseModel
 
-from src.calibration.base import BaseConfidenceEngine
+from src.calibration.base import BaseConfidenceMethod
 from src.exceptions import ExtractionValidationError, LogProbsUnavailableError
 from src.schema import CalibrationResult, GenericExtraction
 
 
-class NativeLogProbEngine(BaseConfidenceEngine):
-    """Engine 1: Native Token LogProb Engine."""
+class NativeLogProbMethod(BaseConfidenceMethod):
+    """Method 1: Native Token LogProb Method."""
 
     def __init__(
         self,
@@ -117,7 +117,7 @@ class NativeLogProbEngine(BaseConfidenceEngine):
         decision = self.determine_audit_decision(calibrated_confidence)
 
         return CalibrationResult(
-            engine_name="Native Token LogProb",
+            method_name="Native Token LogProb",
             extraction=extraction,
             raw_confidence=raw_confidence,
             calibrated_confidence=calibrated_confidence,

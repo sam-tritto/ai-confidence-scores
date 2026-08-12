@@ -46,7 +46,7 @@ def test_compute_suite_metrics_and_summary():
     decisions = ["AUTOMATE", "AUTOMATE", "FLAG_FOR_HUMAN_REVIEW"]
 
     metrics = compute_suite_metrics(
-        engine_name="Test Engine",
+        method_name="Test Method",
         y_true=y_true,
         y_pred=y_pred,
         y_prob=y_prob,
@@ -57,27 +57,24 @@ def test_compute_suite_metrics_and_summary():
     assert abs(metrics.mean_latency_ms - 120.0) < 1e-3
 
     df = summarize_benchmark([metrics])
-    assert "Framework Engine" in df.columns
+    assert "Framework Method" in df.columns
     assert df.shape[0] == 1
 
 
 def test_visualizer_plotting(tmp_path: Path):
     viz = CalibrationVisualizer(output_dir=tmp_path)
     
-    # Mock predictions dict for 9 engines
+    # Mock predictions dict for 6 methods
     mock_preds = {}
-    engine_names = [
+    method_names = [
         "Native Token LogProb",
         "LogProb Delta",
         "Temperature Scaling",
-        "Platt Scaling Logistic",
-        "Self-Consistency & Agreement",
-        "Structured Verbalized Confidence",
         "Continuous Numerical Prompting",
         "Grounding & Alignment",
         "LLM-as-a-Judge",
     ]
-    for name in engine_names:
+    for name in method_names:
         mock_preds[name] = {
             "y_true": np.array([1, 1, 0, 1, 0, 1, 0]),
             "y_prob": np.array([0.9, 0.8, 0.2, 0.85, 0.15, 0.95, 0.05]),
@@ -87,10 +84,10 @@ def test_visualizer_plotting(tmp_path: Path):
     assert rel_path.exists()
 
     metrics_list = []
-    for name in engine_names:
+    for name in method_names:
         metrics_list.append(
             compute_suite_metrics(
-                engine_name=name,
+                method_name=name,
                 y_true=np.array([1, 1, 0, 1, 0]),
                 y_pred=np.array([1, 1, 0, 1, 0]),
                 y_prob=np.array([0.9, 0.8, 0.2, 0.85, 0.15]),

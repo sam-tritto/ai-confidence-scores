@@ -1,5 +1,5 @@
 """
-2. LogProb Delta Engine.
+2. LogProb Delta Method.
 Isolates top-token dominance margin: Delta = top_1_logprob - top_2_logprob.
 Domain-agnostic with configurable Pydantic response schemas.
 """
@@ -12,13 +12,13 @@ from google import genai
 from google.genai import types
 from pydantic import BaseModel
 
-from src.calibration.base import BaseConfidenceEngine
+from src.calibration.base import BaseConfidenceMethod
 from src.exceptions import ExtractionValidationError, LogProbsUnavailableError
 from src.schema import CalibrationResult, GenericExtraction
 
 
-class LogProbDeltaEngine(BaseConfidenceEngine):
-    """Engine 2: LogProb Delta Engine."""
+class LogProbDeltaMethod(BaseConfidenceMethod):
+    """Method 2: LogProb Delta Method."""
 
     def __init__(
         self,
@@ -144,7 +144,7 @@ class LogProbDeltaEngine(BaseConfidenceEngine):
         decision = self.determine_audit_decision(calibrated_confidence)
 
         return CalibrationResult(
-            engine_name="LogProb Delta",
+            method_name="LogProb Delta",
             extraction=extraction,
             raw_confidence=raw_confidence,
             calibrated_confidence=calibrated_confidence,

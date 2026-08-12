@@ -45,7 +45,7 @@ def test_resume_extraction_creation():
 
 def test_calibration_result_schema(sample_ground_truth):
     res = CalibrationResult(
-        engine_name="Test Engine",
+        method_name="Test Method",
         extraction=sample_ground_truth,
         raw_confidence=0.85,
         calibrated_confidence=0.82,
@@ -53,6 +53,6 @@ def test_calibration_result_schema(sample_ground_truth):
         latency_ms=120.5,
         metadata={"test": "data"},
     )
-    assert res.engine_name == "Test Engine"
+    assert res.method_name == "Test Method"
     assert res.audit_decision == AuditDecision.AUTOMATE
     assert res.calibrated_confidence == 0.82
