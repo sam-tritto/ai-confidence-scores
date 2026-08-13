@@ -64,15 +64,19 @@ def test_compute_suite_metrics_and_summary():
 def test_visualizer_plotting(tmp_path: Path):
     viz = CalibrationVisualizer(output_dir=tmp_path)
     
-    # Mock predictions dict for 6 methods
+    # Mock predictions dict for 10 methods
     mock_preds = {}
     method_names = [
         "Native Token LogProb",
         "LogProb Delta",
         "Temperature Scaling",
+        "Platt Scaling Logistic",
+        "Self-Consistency & Agreement",
+        "Structured Verbalized Confidence",
         "Continuous Numerical Prompting",
         "Grounding & Alignment",
         "LLM-as-a-Judge",
+        "Structured Self-Assessment + Platt Scaling",
     ]
     for name in method_names:
         mock_preds[name] = {

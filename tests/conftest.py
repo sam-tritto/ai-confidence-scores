@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from src.schema import (
     ClaimVerificationResult,
+    ConfidenceLevel,
     ContinuousPromptingOutput,
     DomainRole,
     GenericExtraction,
@@ -18,6 +19,8 @@ from src.schema import (
     JudgeEvaluation,
     ResumeExtraction,
     SeniorityLevel,
+    StructuredSelfAssessmentOutput,
+    VerbalizedConfidenceOutput,
 )
 
 
@@ -30,7 +33,21 @@ def create_mock_gemini_client() -> MagicMock:
         schema = getattr(config, "response_schema", None) if config else None
         schema_name = getattr(schema, "__name__", "") if schema else ""
 
-        if schema_name == "ContinuousPromptingOutput":
+        if schema_name == "VerbalizedConfidenceOutput":
+            obj = VerbalizedConfidenceOutput(
+                reasoning="Extracted accurately based on text analysis.",
+                extraction_data={"candidate_name": "Jane Doe", "domain_role": "Data Science"},
+                verbalized_confidence_score=0.88,
+            )
+        elif schema_name == "StructuredSelfAssessmentOutput":
+            obj = StructuredSelfAssessmentOutput(
+                rationale="Chain-of-thought analysis demonstrates high accuracy.",
+                extraction_data={"candidate_name": "Jane Doe", "domain_role": "Data Science"},
+                confidence_level=ConfidenceLevel.HIGH,
+                numerical_confidence=0.85,
+            )
+        elif schema_name == "ContinuousPromptingOutput":
+
             obj = ContinuousPromptingOutput(
                 rationale="Detailed chain of thought evaluation shows high certainty.",
                 extraction_data={"candidate_name": "Jane Doe", "domain_role": "Data Science"},

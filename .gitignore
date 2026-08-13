@@ -4,3 +4,5 @@
 .env
 src/.DS_Store
 notebooks/.DS_Store
+**/__pycache__/
+**/*.pyc

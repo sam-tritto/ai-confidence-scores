@@ -25,7 +25,7 @@ class CalibrationVisualizer:
     def __init__(self, output_dir: Union[str, Path] = "./notebooks/plots"):
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        self.colors = sns.color_palette("tab10", 6)
+        self.colors = sns.color_palette("tab10", 10)
 
     def plot_reliability_diagrams(
         self,
@@ -33,16 +33,16 @@ class CalibrationVisualizer:
         n_bins: int = 10,
         save_name: str = "reliability_diagrams.png",
     ) -> Path:
-        """Plot a 2x3 grid of Reliability Diagrams (Calibration Curves) comparing all 6 frameworks.
+        """Plot a 2x5 grid of Reliability Diagrams (Calibration Curves) comparing all 10 frameworks.
         
         Args:
             method_predictions: Dict mapping method_name to {"y_true": array, "y_prob": array}
         """
-        fig, axes = plt.subplots(2, 3, figsize=(15, 9), sharex=True, sharey=True)
+        fig, axes = plt.subplots(2, 5, figsize=(20, 9), sharex=True, sharey=True)
         axes = axes.flatten()
 
         for idx, (method_name, data) in enumerate(method_predictions.items()):
-            if idx >= 6:
+            if idx >= 10:
                 break
             ax = axes[idx]
             y_true = data["y_true"]
@@ -62,15 +62,15 @@ class CalibrationVisualizer:
                 ax.plot(confs, accs, "o-", color=self.colors[idx], linewidth=2, markersize=6, label=f"ECE: {ece:.3f}")
                 ax.bar(confs, accs, width=0.08, alpha=0.2, color=self.colors[idx], align="center")
 
-            ax.set_title(method_name, fontsize=11, fontweight="bold", pad=8)
+            ax.set_title(method_name, fontsize=10, fontweight="bold", pad=8)
             ax.set_xlim([0.0, 1.0])
             ax.set_ylim([0.0, 1.0])
             ax.set_xlabel("Mean Predicted Confidence", fontsize=9)
             ax.set_ylabel("Empirical Accuracy", fontsize=9)
-            ax.legend(loc="upper left", fontsize=9, frameon=True)
+            ax.legend(loc="upper left", fontsize=8, frameon=True)
             ax.grid(True, linestyle=":", alpha=0.6)
 
-        plt.suptitle("Reliability Diagrams (Calibration Curves) across 6 Frameworks", fontsize=16, fontweight="bold", y=0.98)
+        plt.suptitle("Reliability Diagrams (Calibration Curves) across 10 Frameworks", fontsize=16, fontweight="bold", y=0.98)
         plt.tight_layout(rect=[0, 0, 1, 0.96])
         
         save_path = self.output_dir / save_name
@@ -122,7 +122,7 @@ class CalibrationVisualizer:
             ax2.annotate(f"{width:.1f} ms", (width + 10, p.get_y() + p.get_height() / 2.),
                          ha="left", va="center", fontsize=9)
 
-        plt.suptitle("ECE & Processing Latency Tradeoff across 6 Frameworks", fontsize=15, fontweight="bold")
+        plt.suptitle("ECE & Processing Latency Tradeoff across 10 Frameworks", fontsize=15, fontweight="bold")
         plt.tight_layout(rect=[0, 0, 1, 0.95])
 
         save_path = self.output_dir / save_name
@@ -154,8 +154,8 @@ class CalibrationVisualizer:
             ]
             values += values[:1]
 
-            ax.plot(angles, values, linewidth=1.5, linestyle="solid", label=method_name, color=self.colors[idx % 6])
-            ax.fill(angles, values, color=self.colors[idx % 6], alpha=0.08)
+            ax.plot(angles, values, linewidth=1.5, linestyle="solid", label=method_name, color=self.colors[idx % 10])
+            ax.fill(angles, values, color=self.colors[idx % 10], alpha=0.08)
 
         ax.set_theta_offset(np.pi / 2)
         ax.set_theta_direction(-1)
@@ -165,7 +165,7 @@ class CalibrationVisualizer:
         plt.yticks([0.2, 0.4, 0.6, 0.8, 1.0], ["0.2", "0.4", "0.6", "0.8", "1.0"], color="grey", size=8)
         plt.ylim(0, 1.0)
 
-        plt.title("Multi-Metric Radar Comparison across 6 Calibration Frameworks", size=14, fontweight="bold", y=1.08)
+        plt.title("Multi-Metric Radar Comparison across 10 Calibration Frameworks", size=14, fontweight="bold", y=1.08)
         plt.legend(loc="upper right", bbox_to_anchor=(1.35, 1.1), fontsize=9)
         plt.tight_layout()
 

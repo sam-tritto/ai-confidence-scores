@@ -1,5 +1,5 @@
 """
-6. Two-Tier Evaluator Method (LLM-as-a-Judge).
+9. Two-Tier Evaluator Method (LLM-as-a-Judge).
 Uses a secondary judge instance with an evaluation rubric to score output quality.
 Domain-agnostic with configurable Pydantic response schemas.
 """
@@ -21,7 +21,7 @@ from src.schema import (
 
 
 class LLMAsAJudgeMethod(BaseConfidenceMethod):
-    """Method 6: Two-Tier Evaluator Method (LLM-as-a-Judge)."""
+    """Method 9: Two-Tier Evaluator Method (LLM-as-a-Judge)."""
 
     def __init__(
         self,

@@ -86,6 +86,16 @@ class ResumeExtraction(BaseModel):
     raw_text_summary: Optional[str] = Field(default=None, description="Brief overall summary of candidate profile")
 
 
+class VerbalizedConfidenceOutput(BaseModel):
+    reasoning: str = Field(description="Step-by-step reasoning for extraction and confidence score")
+    extraction_data: Dict[str, Any] = Field(default_factory=dict, description="Structured extracted data matching schema")
+    verbalized_confidence_score: float = Field(
+        description="Self-assessed confidence score between 0.0 and 1.0",
+        ge=0.0,
+        le=1.0,
+    )
+
+
 class CustomerSupportTicket(BaseModel):
     """Example custom user-defined schema for customer support classification."""
     ticket_id: str = Field(default="TICK-000")
@@ -103,6 +113,57 @@ class ContinuousPromptingOutput(BaseModel):
         ge=0.0,
         le=100.0,
     )
+
+
+class ConfidenceLevel(str, Enum):
+    VERY_LOW = "Very Low"
+    LOW = "Low"
+    MEDIUM = "Medium"
+    HIGH = "High"
+    VERY_HIGH = "Very High"
+
+    @classmethod
+    def _missing_(cls, value: object) -> "ConfidenceLevel":
+        if isinstance(value, str):
+            val_lower = value.lower()
+            if "very low" in val_lower or "very_low" in val_lower:
+                return cls.VERY_LOW
+            if "very high" in val_lower or "very_high" in val_lower:
+                return cls.VERY_HIGH
+            if "low" in val_lower:
+                return cls.LOW
+            if "high" in val_lower:
+                return cls.HIGH
+            if "mid" in val_lower or "medium" in val_lower:
+                return cls.MEDIUM
+        return cls.MEDIUM
+
+    @property
+    def numeric_score(self) -> float:
+        mapping = {
+            ConfidenceLevel.VERY_LOW: 0.1,
+            ConfidenceLevel.LOW: 0.3,
+            ConfidenceLevel.MEDIUM: 0.5,
+            ConfidenceLevel.HIGH: 0.7,
+            ConfidenceLevel.VERY_HIGH: 0.9,
+        }
+        return mapping.get(self, 0.5)
+
+
+class StructuredSelfAssessmentOutput(BaseModel):
+    rationale: str = Field(description="Detailed step-by-step chain-of-thought rationale explaining certainty")
+    extraction_data: Dict[str, Any] = Field(default_factory=dict, description="Structured extracted fields")
+    confidence_level: ConfidenceLevel = Field(
+        default=ConfidenceLevel.MEDIUM,
+        description="Categorical confidence rating: [Very Low, Low, Medium, High, Very High]"
+    )
+    numerical_confidence: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+        description="Continuous self-assessed confidence score between 0.0 and 1.0"
+    )
+
 
 
 class ClaimVerificationResult(BaseModel):

@@ -1,6 +1,6 @@
 """
-7. Continuous Numerical Prompting Method.
-Prompts the model for a continuous integer rating (0-100) alongside chain-of-thought rationale.
+6. Structured Self-Assessment Method (Verbalized Confidence).
+Requests explicit reasoning, structured extraction, and verbalized_confidence_score (0.0-1.0).
 Domain-agnostic with configurable Pydantic response schemas.
 """
 
@@ -14,13 +14,13 @@ from src.calibration.base import BaseConfidenceMethod
 from src.exceptions import ExtractionValidationError
 from src.schema import (
     CalibrationResult,
-    ContinuousPromptingOutput,
     GenericExtraction,
+    VerbalizedConfidenceOutput,
 )
 
 
-class ContinuousPromptingMethod(BaseConfidenceMethod):
-    """Method 7: Continuous Numerical Prompting Method."""
+class VerbalizedConfidenceMethod(BaseConfidenceMethod):
+    """Method 6: Structured Self-Assessment Method (Verbalized Confidence)."""
 
     def __init__(
         self,
@@ -54,15 +54,16 @@ class ContinuousPromptingMethod(BaseConfidenceMethod):
         start_time = time.perf_counter()
 
         eval_prompt = prompt or (
-            f"Analyze the text below.\n"
-            f"1. Write chain-of-thought rationale explaining your certainty.\n"
-            f"2. Output a continuous confidence rating from 0 to 100 (where 0 is zero confidence and 100 is absolute certainty).\n"
+            f"Analyze the following text.\n"
+            f"1. Extract structured data according to schema fields.\n"
+            f"2. Provide step-by-step reasoning.\n"
+            f"3. Assess your overall confidence on a continuous scale from 0.0 (uncertain) to 1.0 (certain).\n"
             f"Input Text:\n{input_text}"
         )
 
         config = types.GenerateContentConfig(
             response_mime_type="application/json",
-            response_schema=ContinuousPromptingOutput,
+            response_schema=VerbalizedConfidenceOutput,
             temperature=0.0,
         )
         contents = [eval_prompt]
@@ -79,39 +80,39 @@ class ContinuousPromptingMethod(BaseConfidenceMethod):
             raise ExtractionValidationError(self.__class__.__name__, "", "Empty API response text")
 
         try:
-            prompt_output = ContinuousPromptingOutput.model_validate_json(response.text)
+            verbalized_output = VerbalizedConfidenceOutput.model_validate_json(response.text)
         except Exception as e:
             raise ExtractionValidationError(self.__class__.__name__, response.text, str(e))
 
-        # Attempt mapping extraction_data to target schema
+        # Attempt to map extraction_data to target schema
         try:
-            extraction = schema.model_validate(prompt_output.extraction_data)
+            extraction = schema.model_validate(verbalized_output.extraction_data)
         except Exception:
             try:
                 extraction = schema.model_validate_json(response.text)
             except Exception:
                 extraction = GenericExtraction(
                     primary_category="Extracted",
-                    extracted_fields=prompt_output.extraction_data,
-                    summary=prompt_output.rationale,
+                    extracted_fields=verbalized_output.extraction_data,
+                    summary=verbalized_output.reasoning,
                 )
 
-        raw_confidence = float(max(0.0, min(1.0, prompt_output.confidence_rating_0_to_100 / 100.0)))
+        raw_confidence = float(max(0.0, min(1.0, verbalized_output.verbalized_confidence_score)))
         calibrated_confidence = raw_confidence
 
         latency_ms = (time.perf_counter() - start_time) * 1000.0
         decision = self.determine_audit_decision(calibrated_confidence)
 
         return CalibrationResult(
-            method_name="Continuous Numerical Prompting",
+            method_name="Structured Verbalized Confidence",
             extraction=extraction,
             raw_confidence=raw_confidence,
             calibrated_confidence=calibrated_confidence,
             audit_decision=decision,
             latency_ms=latency_ms,
             metadata={
-                "chain_of_thought_rationale": prompt_output.rationale,
-                "rating_0_to_100": prompt_output.confidence_rating_0_to_100,
+                "reasoning": verbalized_output.reasoning,
+                "verbalized_score": verbalized_output.verbalized_confidence_score,
                 "target_schema": schema.__name__,
             },
         )

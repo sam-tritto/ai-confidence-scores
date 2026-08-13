@@ -1,5 +1,5 @@
 """
-5. Grounding & Context Alignment Method.
+8. Grounding & Context Alignment Method.
 Extracts atomic claims from output and performs NLI verification against source text.
 Domain-agnostic with configurable Pydantic response schemas.
 """
@@ -21,7 +21,7 @@ from src.schema import (
 
 
 class GroundingAlignmentMethod(BaseConfidenceMethod):
-    """Method 5: Grounding & Context Alignment Method."""
+    """Method 8: Grounding & Context Alignment Method."""
 
     def __init__(
         self,

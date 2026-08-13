@@ -13,6 +13,7 @@ from src.exceptions import (
 from src.schema import (
     AuditDecision,
     CalibrationResult,
+    ConfidenceLevel,
     ContinuousPromptingOutput,
     CustomerSupportTicket,
     DomainRole,
@@ -22,6 +23,8 @@ from src.schema import (
     JudgeEvaluation,
     ResumeExtraction,
     SeniorityLevel,
+    StructuredSelfAssessmentOutput,
+    VerbalizedConfidenceOutput,
 )
 from src.ingestion import ResumeIngestor
 
@@ -33,6 +36,7 @@ __all__ = [
     "LogProbsUnavailableError",
     "AuditDecision",
     "CalibrationResult",
+    "ConfidenceLevel",
     "ContinuousPromptingOutput",
     "CustomerSupportTicket",
     "DomainRole",
@@ -42,5 +46,7 @@ __all__ = [
     "JudgeEvaluation",
     "ResumeExtraction",
     "SeniorityLevel",
+    "StructuredSelfAssessmentOutput",
+    "VerbalizedConfidenceOutput",
     "ResumeIngestor",
 ]
